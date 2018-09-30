@@ -1,0 +1,178 @@
+Главная идея - избавиться от глобального состояния opengl
+Как это сделать???
+    Нужно все же хранить переменные состояния
+        Режим отрисовки
+            Обычный
+            карта глубины
+            Сетка
+        Настройки контура
+        Кадровые буферы
+        Работает ли проверка глубины?
+            Можно сделать атрибуом буфера(?)
+        +Параллельность
+
+
+
+Основные модули:
+
+    * Мини-библиотека для математики
+        +Векторы
+        +Матрицы
+        +Генераторы матриц преобразования
+        +LookAt / Frustum
+        +Кватернионы
+        Операторы и функции
+            +Обычные операции
+            +Произведения
+            +Применение унарной и бинарной функции
+
+    * Растеризация примитивов
+        +Холст - [-1,1]
+        +По умолчанию - ортографическая проекция
+        +Тест глубины
+        -Вместо stencil-теста - рендер в текстуру
+
+        -Возможные примитивы: треугольники, line-strip, квады
+
+    * Шейдеры
+        Вершинный и фрагментный
+        +Работают на процессоре
+        ?Композиция шейдеров (как слои в фотошопе)
+        Принимают словарь атрибутов (векторов и чисел) и uniform-констант
+        Обычный конвейер, пиксели, которые не видны, не растеризуются
+        фрагментным шейдером.
+
+    ? Рендеринг моноширного текста?
+        Загрузка шрифта из текстуры
+        Word wrap
+
+
+Как работают шейдеры?
+    * Типы данных на входе в шейдеры
+        int, float, Vector3, Vector4
+        Можно попробовать сделать std::variant (c++17)
+
+        typedef std::variant<int, float, Vec3, Vec4> ShaderParamVariant
+    * Вершинный
+        Принимает на вход очевидно, вершину со всеми ее атрибутами. На выходе
+        должна быть одна переменная - позиция в 3Д (четвертая координата не
+        нужна?/Должна разделить третью?)
+        Инстансинг бесполезен
+        typedef map<int, ShaderParamVariant> ShaderMap;
+
+        Vec3 myVertexShader(ShaderMap &attribs,
+                               ShaderMap &uniforms,
+                               ShaderMap &output)
+        {
+            Mat4 mvp = get<Mat4>(uniforms[MVP_DEFAULT_LOCATION]);
+            Vec3 position = get<Vec3>(attribs[POSITION_LOCATION]);
+            Vec4 position4 = Vec4(position, 1.0f);
+            return mvp * position4;
+        }
+
+    * Функция растеризации
+        Может быть для разных примитивов
+        Считает барицентрические координаты
+        Интерполирует выходы вершинного шейдера
+        Считаем, что все нужно интерполировать, иначе считаем до отрисовки в
+        unoformах
+
+    * Фрагментный шейдер
+        На вход получает интерполированные переменные и uniform.
+        На выходе - только цвет Vec4.
+        Текстурок пока не планируется.
+        Прозрачность посмотрим как сделать. Для начала просто пусть присваивается
+
+        Vec4 myFragmentShader(ShaderMap &uniforms, ShaderMap &input)
+        {
+            Vec4 color = get<Vec4>(input[0]);
+            return color;
+        }
+
+    * Дополнительные плюшки
+        Рисование цветного контура. Что-то вроде
+            contourBegin(Pallette[Black]);
+            drawTriangles(attrs, uniforms, indeces);
+            drawTriangles(attrs2, uniforms2, indeces);
+            contourEnd();
+            // Это может быть прикольно для спрайтовой графики
+
+        Режим рисования сеточки (дебажный)
+
+        Вывод карты глубины
+
+        Ограниченная цветовая палитра и дизеринг (будет очень круто, если это
+        сделаю)
+        struct Shader
+        {
+            std::function<Vec3(ShaderMap&, ShaderMap&, ShaderMap&)> vertex_func;
+            std::function<Vec3(ShaderMap&, ShaderMap&)> framgent_func;
+        };
+
++Кадровый буфер
+    Это штука, которая хранит собственно кадр и всякие другие штуки
+        Цветная картинка
+        Буфер глубины
+
+    class Framebuffer
+    {
+        // Size
+        int width, height;
+
+        // How to blend pixels with alpha values?
+        BlendMode blend_mode = SrcMinusDestAlpha;
+
+        // Эти типы пока что гипотетические. Потом будет какой-нибудь
+        оптимальный ndarray.
+        RGBAImage img;
+        Array2D<float> depthMap;
+public:
+        Framebuffer(int width, int height);
+
+        // Puts a pixel onto an image. A depth test happens here.
+        void putPixel(Vec3 position, Vec4 color);
+
+        RGBAImage& getImage();
+
+        void clearColor(Vec4 color);
+        void clearDepth(float depth);
+
+        void Clear(Vec4 color = Vec4(0,0,0,1), float depth = 2.0f);
+};
+
+Управление цветом
+    Системы RGBA, RGB, HSV
+    Рендер всегда в RGBA. Шейдер имеет право не использовать прозрачность
+    Разные режимы смешивания
+
+Функции растеризации
+
+    void drawTriangle(Framebuffer &fbo,
+                        Shader &shader,
+                        vector<ShaderMap> &attrs,
+                        ShaderMap &uniforms,
+                        std::vector<unsigned> &indeces>
+                        int idx
+                     )
+    {
+        Vec4 positions[3];
+        ShaderMap outputs[3];
+
+        for(int i = 0; i < 3; i++) {
+            int vert_idx = indeces[3 * idx + i];
+            positions[i] = Shader.vertex_func(attrs[vert_idx], uniforms,
+            outputs[i]);
+        }
+
+        positions[0] = Shader.vertex_func()
+    }
+
+    drawX(FrameBuffer &fbo, Shader &shader, std::vector<ShaderMap> &attrs, ShaderMap &uniforms, std::vector<unsigned> &indeces)
+    {
+        int num_verts = attrs.size();
+
+        int num_triangles = indeces.size() / 3;
+        for(int i = 0; i < num_triangles; i++) {
+
+        }
+    }
